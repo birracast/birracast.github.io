@@ -18,13 +18,45 @@
       padding: 24px;
       color: var(--text);
       min-height: 100vh;
-      background: 
-        url("background.png") center top / cover no-repeat fixed, 
+      background:
+        url("background.png") center top / cover no-repeat fixed,
         linear-gradient(to bottom, #111111, #333333);
     }
 
     header { text-align:center; margin-bottom: 28px; }
     .status { text-align:center; margin: 18px 0; color: var(--muted); }
+
+    /* --- BOTÕES DE CATEGORIA --- */
+    #category-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    #category-buttons button {
+      background: orange;
+      color: #000;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-family: 'Sour Gummy', cursive;
+      font-size: 15px;
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    #category-buttons button:hover {
+      background: #ffa733;
+      transform: scale(1.05);
+    }
+
+    #category-buttons button.active {
+      background: #fff;
+      color: orange;
+      border: 2px solid orange;
+    }
 
     /* Caixa de pesquisa */
     #search-box {
@@ -44,9 +76,9 @@
     #produtos {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 50px; /* mais espaço entre os cards */
+      gap: 50px;
       margin-top: 20px;
-      align-items: stretch; /* força os cards a mesma altura */
+      align-items: stretch;
     }
 
     @media (min-width: 600px) {
@@ -141,6 +173,9 @@
 
   <header></header>
 
+  <!-- Botões de categoria -->
+  <div id="category-buttons"></div>
+
   <!-- Caixa de pesquisa -->
   <input type="text" id="search-box" placeholder="Pesquisar produtos..." />
 
@@ -157,7 +192,8 @@
       imagem:  ["LinkDaImagem","Imagem","Foto","LinkImagem"],
       amazon:  ["LinkAmazon","Amazon"],
       ml:      ["LinkMercadoLivr","LinkMercadoLivre","MercadoLivre","ML"],
-      shopee:  ["LinkShopee","Shopee"]
+      shopee:  ["LinkShopee","Shopee"],
+      categoria: ["Categoria","Categorias","Tags"]
     };
 
     const get = (row, keys) => {
@@ -169,6 +205,7 @@
     };
 
     let allCards = [];
+    let allCategories = new Set();
 
     Papa.parse(sheetUrl, {
       download: true,
@@ -178,24 +215,25 @@
         const container = document.getElementById("produtos");
         const status = document.getElementById("status");
 
-        const rows = results.data
-          .map(r => {
-            const clean = {};
-            Object.keys(r).forEach(k => clean[k.trim()] = r[k]);
-            return clean;
-          })
-          .filter(r => Object.values(r).some(v => String(v).trim()));
-
-        let rendered = 0;
+        const rows = results.data.map(r => {
+          const clean = {};
+          Object.keys(r).forEach(k => clean[k.trim()] = r[k]);
+          return clean;
+        }).filter(r => Object.values(r).some(v => String(v).trim()));
 
         rows.forEach(item => {
-          const nome  = get(item, COLS.produto);
+          const nome = get(item, COLS.produto);
           if (!nome) return;
+          const img = get(item, COLS.imagem);
+          const az = get(item, COLS.amazon);
+          const ml = get(item, COLS.ml);
+          const sp = get(item, COLS.shopee);
+          const categorias = get(item, COLS.categoria)
+            .split(";")
+            .map(c => c.trim().toLowerCase())
+            .filter(c => c);
 
-          const img   = get(item, COLS.imagem);
-          const az    = get(item, COLS.amazon);
-          const ml    = get(item, COLS.ml);
-          const sp    = get(item, COLS.shopee);
+          categorias.forEach(c => allCategories.add(c));
 
           const card = document.createElement("div");
           card.className = "produto";
@@ -217,28 +255,53 @@
           `;
 
           container.appendChild(card);
-          allCards.push({element: card, name: nome.toLowerCase()});
-          rendered++;
+          allCards.push({ element: card, name: nome.toLowerCase(), categories: categorias });
         });
 
-        if (rendered === 0) {
-          status.textContent = "Nenhum produto encontrado. Verifique os nomes das colunas da planilha.";
-        } else {
-          status.classList.add("hidden");
-        }
+        createCategoryButtons();
+        status.classList.add("hidden");
       },
       error: function(err) {
-        const status = document.getElementById("status");
-        status.textContent = "Erro ao carregar a planilha: " + (err && err.message ? err.message : "verifique o link do CSV publicado");
+        document.getElementById("status").textContent = "Erro ao carregar a planilha: " + (err && err.message ? err.message : "verifique o link do CSV publicado");
       }
     });
 
-    // Função de filtro em tempo real
+    // --- Criação automática dos botões ---
+    function createCategoryButtons() {
+      const area = document.getElementById("category-buttons");
+      const sorted = Array.from(allCategories).sort((a, b) => a.localeCompare(b));
+
+      sorted.forEach(cat => {
+        const btn = document.createElement("button");
+        btn.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+        btn.addEventListener("click", () => filterByCategory(cat, btn));
+        area.appendChild(btn);
+      });
+    }
+
+    // --- Filtro por categoria ---
+    function filterByCategory(category, btn) {
+      document.querySelectorAll("#category-buttons button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      document.getElementById("search-box").value = category; // Preenche a busca também
+
+      allCards.forEach(c => {
+        if (c.categories.includes(category)) {
+          c.element.style.display = "flex";
+        } else {
+          c.element.style.display = "none";
+        }
+      });
+    }
+
+    // --- Filtro pelo campo de busca ---
     const searchBox = document.getElementById("search-box");
     searchBox.addEventListener("input", function() {
       const query = this.value.toLowerCase();
+      document.querySelectorAll("#category-buttons button").forEach(b => b.classList.remove("active"));
       allCards.forEach(c => {
-        if (c.name.includes(query)) {
+        if (c.name.includes(query) || c.categories.some(cat => cat.includes(query))) {
           c.element.style.display = "flex";
         } else {
           c.element.style.display = "none";
